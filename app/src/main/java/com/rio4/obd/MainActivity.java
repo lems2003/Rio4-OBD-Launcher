@@ -1,3 +1,4 @@
+
 package com.rio4.obd;
 
 import android.Manifest;
@@ -14,9 +15,9 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
-import android.media.MediaController;
+import android.media.session.MediaController;
 import android.media.MediaMetadata;
-import android.media.MediaSessionManager;
+import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.Bundle;
