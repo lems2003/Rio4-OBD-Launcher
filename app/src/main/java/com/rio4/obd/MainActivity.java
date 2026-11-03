@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -13,6 +14,10 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
+import android.media.MediaController;
+import android.media.MediaMetadata;
+import android.media.MediaSessionManager;
+import android.media.session.PlaybackState;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -50,6 +55,7 @@ public class MainActivity extends Activity {
 
     private TextView clock, date, coolant, rpm, voltage, obdStatus, track;
     private ImageView carImage;
+    private MediaController activeMediaController;
 
     private volatile boolean connected = false;
     private volatile boolean active = true;
@@ -78,6 +84,14 @@ public class MainActivity extends Activity {
         }
     };
 
+    private final Runnable mediaTask = new Runnable() {
+        @Override
+        public void run() {
+            updateMediaInfo();
+            handler.postDelayed(this, 1500);
+        }
+    };
+
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -92,12 +106,19 @@ public class MainActivity extends Activity {
 
         buildScreen();
         handler.post(clockTask);
+        handler.post(mediaTask);
 
         String savedAddress = prefs.getString("obd_address", null);
 
         if (savedAddress != null && hasBluetoothPermission()) {
             connectAddress(savedAddress);
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        updateMediaInfo();
     }
 
     @Override
@@ -243,6 +264,14 @@ public class MainActivity extends Activity {
         p.addView(label("♫", 86, RED, true));
 
         track = label("Reproductor multimedia", 17, WHITE, true);
+        track.setOnClickListener(v -> {
+            if (!hasNotificationAccess()) {
+                startActivity(new Intent(
+                        Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            } else {
+                updateMediaInfo();
+            }
+        });
         p.addView(track);
 
         View line = new View(this);
@@ -274,11 +303,133 @@ public class MainActivity extends Activity {
         p.addView(connect);
     }
 
+    private boolean hasNotificationAccess() {
+        String enabled = Settings.Secure.getString(
+                getContentResolver(), "enabled_notification_listeners");
+        ComponentName component =
+                new ComponentName(this, RioNotificationListener.class);
+
+        return enabled != null &&
+                enabled.contains(component.flattenToString());
+    }
+
+    private void updateMediaInfo() {
+        if (track == null) return;
+
+        if (!hasNotificationAccess()) {
+            activeMediaController = null;
+            track.setText("ACTIVA ACCESO MULTIMEDIA");
+            return;
+        }
+
+        try {
+            MediaSessionManager manager =
+                    (MediaSessionManager) getSystemService(MEDIA_SESSION_SERVICE);
+
+            if (manager == null) return;
+
+            List<MediaController> sessions = manager.getActiveSessions(
+                    new ComponentName(this, RioNotificationListener.class));
+
+            MediaController chosen = null;
+            MediaController fallback = null;
+
+            for (MediaController controller : sessions) {
+                MediaMetadata metadata = controller.getMetadata();
+
+                if (metadata == null) continue;
+                if (fallback == null) fallback = controller;
+
+                PlaybackState state = controller.getPlaybackState();
+
+                if (state != null &&
+                        state.getState() == PlaybackState.STATE_PLAYING) {
+                    chosen = controller;
+                    break;
+                }
+            }
+
+            if (chosen == null) chosen = fallback;
+            activeMediaController = chosen;
+
+            if (chosen == null || chosen.getMetadata() == null) {
+                track.setText("Sin reproducción multimedia");
+                return;
+            }
+
+            MediaMetadata metadata = chosen.getMetadata();
+
+            String title = metadata.getString(
+                    MediaMetadata.METADATA_KEY_TITLE);
+
+            String artist = metadata.getString(
+                    MediaMetadata.METADATA_KEY_ARTIST);
+
+            if (artist == null || artist.trim().isEmpty()) {
+                artist = metadata.getString(
+                        MediaMetadata.METADATA_KEY_ALBUM_ARTIST);
+            }
+
+            if (title == null || title.trim().isEmpty()) {
+                title = metadata.getString(
+                        MediaMetadata.METADATA_KEY_DISPLAY_TITLE);
+            }
+
+            if (title == null || title.trim().isEmpty()) {
+                title = "Reproduciendo";
+            }
+
+            track.setText(artist == null || artist.trim().isEmpty()
+                    ? title : title + " — " + artist);
+
+        } catch (SecurityException e) {
+            activeMediaController = null;
+            track.setText("ACTIVA ACCESO MULTIMEDIA");
+
+        } catch (Exception e) {
+            activeMediaController = null;
+            track.setText("Reproductor multimedia");
+        }
+    }
+
     private TextView mediaButton(String text, int key) {
         TextView b = label(text, 23, WHITE, true);
         b.setPadding(dp(8), dp(8), dp(8), dp(8));
 
         b.setOnClickListener(v -> {
+            MediaController controller = activeMediaController;
+
+            if (controller != null) {
+                try {
+                    MediaController.TransportControls controls =
+                            controller.getTransportControls();
+
+                    if (key == KeyEvent.KEYCODE_MEDIA_PREVIOUS) {
+                        controls.skipToPrevious();
+                        return;
+                    }
+
+                    if (key == KeyEvent.KEYCODE_MEDIA_NEXT) {
+                        controls.skipToNext();
+                        return;
+                    }
+
+                    if (key == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) {
+                        PlaybackState state = controller.getPlaybackState();
+
+                        if (state != null &&
+                                state.getState() == PlaybackState.STATE_PLAYING) {
+                            controls.pause();
+                        } else {
+                            controls.play();
+                        }
+                        return;
+                    }
+
+                } catch (Exception ignored) {
+                }
+            }
+
             AudioManager a =
                     (AudioManager) getSystemService(AUDIO_SERVICE);
 
