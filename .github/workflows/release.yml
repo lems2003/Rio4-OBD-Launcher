@@ -1,0 +1,59 @@
+name: Crear APK Release Rio 4
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v4
+
+      - name: Instalar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Instalar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Instalar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Preparar firma
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RIO4_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64" || {
+            echo "Falta configurar la clave de firma"
+            exit 1
+          }
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/rio4-release.jks"
+          echo "RIO4_KEYSTORE_FILE=$RUNNER_TEMP/rio4-release.jks" >> "$GITHUB_ENV"
+
+      - name: Compilar APK firmada
+        env:
+          RIO4_KEYSTORE_PASSWORD: ${{ secrets.RIO4_KEYSTORE_PASSWORD }}
+          RIO4_KEY_ALIAS: ${{ secrets.RIO4_KEY_ALIAS }}
+          RIO4_KEY_PASSWORD: ${{ secrets.RIO4_KEY_PASSWORD }}
+        run: |
+          test -n "$RIO4_KEYSTORE_PASSWORD"
+          test -n "$RIO4_KEY_ALIAS"
+          test -n "$RIO4_KEY_PASSWORD"
+          gradle assembleRelease
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rio4-OBD-Launcher-Release
+          path: app/build/outputs/apk/release/*.apk
