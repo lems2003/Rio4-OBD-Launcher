@@ -1,3 +1,46 @@
 plugins {
-    id 'com.android.application' version '8.7.3' apply false
+    id 'com.android.application'
+}
+
+def signingStoreFile = System.getenv("RIO4_KEYSTORE_FILE")
+def signingStorePassword = System.getenv("RIO4_KEYSTORE_PASSWORD")
+def signingKeyAlias = System.getenv("RIO4_KEY_ALIAS")
+def signingKeyPassword = System.getenv("RIO4_KEY_PASSWORD")
+
+def hasReleaseSigning = signingStoreFile &&
+        signingStorePassword &&
+        signingKeyAlias &&
+        signingKeyPassword
+
+android {
+    namespace 'com.rio4.obd'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.rio4.obd'
+        minSdk 23
+        targetSdk 32
+        versionCode 1
+        versionName '1.0'
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(signingStoreFile)
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled false
+        }
+    }
 }
